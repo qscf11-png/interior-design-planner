@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1525"/>
+      <stop offset="100%" stop-color="#0d0b15"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e8c97a"/>
+      <stop offset="100%" stop-color="#c4911a"/>
+    </linearGradient>
+    <linearGradient id="purple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#7c6af7"/>
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="44" fill="url(#bg)"/>
+  <!-- House roof -->
+  <path d="M96 34 L158 82 L148 82 L148 152 L44 152 L44 82 L34 82 Z" fill="none" stroke="url(#gold)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Chimney -->
+  <rect x="115" y="46" width="14" height="24" rx="2" fill="none" stroke="url(#gold)" stroke-width="3.5" opacity="0.7"/>
+  <!-- Door -->
+  <rect x="83" y="112" width="26" height="40" rx="13" fill="none" stroke="url(#purple)" stroke-width="3.5"/>
+  <!-- Window L -->
+  <rect x="50" y="95" width="22" height="20" rx="4" fill="none" stroke="url(#gold)" stroke-width="2.5" opacity="0.75"/>
+  <line x1="61" y1="95" x2="61" y2="115" stroke="url(#gold)" stroke-width="1.5" opacity="0.5"/>
+  <line x1="50" y1="105" x2="72" y2="105" stroke="url(#gold)" stroke-width="1.5" opacity="0.5"/>
+  <!-- Window R -->
+  <rect x="120" y="95" width="22" height="20" rx="4" fill="none" stroke="url(#gold)" stroke-width="2.5" opacity="0.75"/>
+  <line x1="131" y1="95" x2="131" y2="115" stroke="url(#gold)" stroke-width="1.5" opacity="0.5"/>
+  <line x1="120" y1="105" x2="142" y2="105" stroke="url(#gold)" stroke-width="1.5" opacity="0.5"/>
+  <!-- Sparkle stars -->
+  <circle cx="35" cy="40" r="2.5" fill="#d4a853" opacity="0.6"/>
+  <circle cx="158" cy="32" r="1.8" fill="#8b7cf6" opacity="0.7"/>
+  <circle cx="168" cy="55" r="1.4" fill="#d4a853" opacity="0.5"/>
+  <circle cx="24" cy="62" r="1.6" fill="#8b7cf6" opacity="0.5"/>
+</svg>
