@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { Upload, Sparkles, ExternalLink, RefreshCw, Image, Wand2 } from 'lucide-react'
-import { analyzeImage, editImage } from '../lib/gaisf'
+import { analyzeImage, editImage, compressImage } from '../lib/gaisf'
 
 const FLOOR_PLAN_PROMPT = `你是一位專業的室內設計師，請仔細分析這張平面圖或房間照片，以JSON格式回傳分析結果。
 只回傳JSON，不要任何其他說明文字。若無法確定某些數值，請合理估計。
@@ -54,7 +54,11 @@ export default function FloorPlan({ settings }) {
   const handleFile = (file) => {
     if (!file || !file.type.startsWith('image/')) return
     const reader = new FileReader()
-    reader.onload = (e) => { setImage(e.target.result); setResult(null); setError(null) }
+    reader.onload = async (e) => {
+      // 壓縮圖片以符合 API 傳輸限制（Vercel 4.5MB）
+      const compressed = await compressImage(e.target.result).catch(() => e.target.result)
+      setImage(compressed); setResult(null); setError(null)
+    }
     reader.readAsDataURL(file)
   }
 
@@ -65,7 +69,7 @@ export default function FloorPlan({ settings }) {
 
   const handleAnalyze = async () => {
     if (!image) return
-    if (!settings?.apiKey) { setError('請先在設定中填入 API Key'); return }
+    if (!settings?.apiKey && !settings?.geminiApiKey) { setError('請先在設定中填入 API Key'); return }
     setAnalyzing(true); setError(null)
     try {
       const raw = await analyzeImage(image, FLOOR_PLAN_PROMPT, settings)

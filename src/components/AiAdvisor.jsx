@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { X, Send, Image, Sparkles } from 'lucide-react'
-import { streamChat } from '../lib/gaisf'
+import { streamChat, compressImage } from '../lib/gaisf'
 
 export default function AiAdvisor({ isOpen, onClose, settings }) {
   const [messages, setMessages] = useState([
@@ -27,7 +27,11 @@ export default function AiAdvisor({ isOpen, onClose, settings }) {
     const file = e.target.files[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = (ev) => setImage(ev.target.result)
+    reader.onload = async (ev) => {
+      // 壓縮圖片以符合 API 傳輸限制
+      const compressed = await compressImage(ev.target.result).catch(() => ev.target.result)
+      setImage(compressed)
+    }
     reader.readAsDataURL(file)
   }
 
