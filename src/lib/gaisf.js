@@ -45,7 +45,37 @@ export const IMAGE_MODELS = [
 
 // ─── Gemini Direct ───
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta'
-const GEMINI_IMAGE_MODEL = 'gemini-2.0-flash-preview-image-generation'
+
+// 生圖模型偏好序（新→舊）；實際以 API 動態查詢為準，全部失敗才逐一嘗試此清單
+const GEMINI_IMAGE_MODELS_PREFERRED = [
+  'gemini-3.1-flash-image',                    // Nano Banana 2（2026 現役）
+  'gemini-2.5-flash-image',                    // Nano Banana（2026/10 退役）
+  'gemini-2.5-flash-image-preview',
+  'gemini-2.0-flash-preview-image-generation', // 已淘汰，保留為最後備援
+]
+
+// 已解析的生圖模型快取（依 Key 區分，換 Key 時重新偵測）
+let imageModelCache = { key: null, model: null }
+
+// 動態查詢此 Key 可用的生圖模型（名稱含 image 且支援 generateContent）
+async function resolveGeminiImageModel(apiKey) {
+  if (imageModelCache.key === apiKey && imageModelCache.model) return imageModelCache.model
+  try {
+    const res = await fetch(`${GEMINI_API_BASE}/models?key=${apiKey}`)
+    if (!res.ok) return null
+    const data = await res.json()
+    const imageModels = (data.models || [])
+      .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+      .map(m => m.name.replace('models/', ''))
+      .filter(id => id.includes('image'))
+    // 先依偏好序挑，沒有命中就拿 API 回傳的第一個生圖模型
+    const picked = GEMINI_IMAGE_MODELS_PREFERRED.find(p => imageModels.includes(p)) || imageModels[0] || null
+    if (picked) imageModelCache = { key: apiKey, model: picked }
+    return picked
+  } catch {
+    return null
+  }
+}
 
 export const GEMINI_MODELS_DEFAULT = [
   { id: 'gemini-2.5-flash',  name: 'Gemini 2.5 Flash' },
@@ -356,32 +386,49 @@ async function editImageNanobanana(imageDataUrl, prompt, apiKey, n = 1) {
 
 async function geminiEditImage(imageDataUrl, prompt, apiKey) {
   const { base64, mimeType } = dataUrlToBase64Parts(imageDataUrl)
-  const url = `${GEMINI_API_BASE}/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${apiKey}`
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{
-        parts: [
-          { text: prompt },
-          { inlineData: { mimeType, data: base64 } }
-        ]
-      }],
-      generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+  // 先動態偵測可用模型，再附上偏好清單作為備援，逐一嘗試
+  const resolved = await resolveGeminiImageModel(apiKey)
+  const candidates = [...new Set([resolved, ...GEMINI_IMAGE_MODELS_PREFERRED].filter(Boolean))]
+
+  let lastError = null
+  for (const model of candidates) {
+    const url = `${GEMINI_API_BASE}/models/${model}:generateContent?key=${apiKey}`
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: prompt },
+            { inlineData: { mimeType, data: base64 } }
+          ]
+        }],
+        generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+      })
     })
-  })
 
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '')
-    if (res.status === 429) throw new Error('Gemini 配額超限，請稍候再試')
-    throw new Error(`Gemini Image HTTP ${res.status}: ${txt.substring(0, 150)}`)
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '')
+      if (res.status === 429) throw new Error('Gemini 配額超限，請稍候再試')
+      // 模型不存在或不支援生圖 → 換下一個候選
+      if (res.status === 404 || res.status === 400) {
+        lastError = new Error(`模型 ${model} 不可用 (HTTP ${res.status})`)
+        continue
+      }
+      throw new Error(`Gemini Image HTTP ${res.status}: ${txt.substring(0, 150)}`)
+    }
+
+    const data = await res.json()
+    const images = extractImagesFromCandidates(data)
+    if (images.length > 0) {
+      imageModelCache = { key: apiKey, model }  // 記住成功的模型，下次直接用
+      return images
+    }
+    lastError = new Error(`模型 ${model} 未回傳圖片`)
   }
 
-  const data = await res.json()
-  const images = extractImagesFromCandidates(data)
-  if (images.length > 0) return images
-  throw new Error('Gemini 回傳無圖片資料')
+  throw new Error(`所有 Gemini 生圖模型都無法使用（${lastError?.message || '未知原因'}），建議改用達哥 GAISF`)
 }
 
 export async function generateImageDalle(prompt, apiKey, model = 'Dalle3') {
