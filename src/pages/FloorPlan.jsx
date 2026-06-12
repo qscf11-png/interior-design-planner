@@ -186,6 +186,7 @@ function AnalysisResult({ result, image, settings }) {
       `CRITICAL: Keep the EXACT same camera angle, perspective, viewpoint, room shape and structure, window and door positions as the original photo.`,
       `MUST redesign everything else: furniture, decor, wall color/texture, flooring material, CEILING design, lighting fixtures, and soft furnishings.`,
       `Ceiling: completely redesign the ceiling to match the style — ${style.ceiling || 'a ceiling treatment that fits the style, with new lighting fixtures'}. Do NOT keep the original plain ceiling.`,
+      `If the original room is empty, bare or unfurnished, treat this as virtual staging: fully furnish and decorate the space with a complete set of furniture, rugs, curtains, lighting and decor in this style. Do not leave the room empty.`,
       `Style details: ${style.prompt}`,
       `Room context: ${rooms}, approximately ${result.totalArea || 30} 坪.`,
       `Output: photorealistic interior design rendering, same composition as input photo.`,
