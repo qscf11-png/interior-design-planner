@@ -1,6 +1,9 @@
-import { useState, useRef } from 'react'
-import { Upload, Sparkles, ExternalLink, RefreshCw, Image, Wand2 } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Upload, Sparkles, ExternalLink, RefreshCw, Image, Wand2, Camera, Box } from 'lucide-react'
 import { analyzeImage, editImage, compressImage } from '../lib/gaisf'
+import { getFloorSession, saveFloorSession, clearFloorSession } from '../lib/db'
+import RoomPhotoModal from '../components/RoomPhotoModal'
+import Walkthrough3D from '../components/Walkthrough3D'
 
 const FLOOR_PLAN_PROMPT = `你是一位專業的室內設計師，請仔細分析這張平面圖或房間照片，以JSON格式回傳分析結果。
 只回傳JSON，不要任何其他說明文字。若無法確定某些數值，請合理估計。
@@ -9,14 +12,17 @@ const FLOOR_PLAN_PROMPT = `你是一位專業的室內設計師，請仔細分�
   "summary": "格局整體描述（2-3句）",
   "totalArea": 30,
   "rooms": [
-    { "name": "客廳", "area": 10, "orientation": "南", "features": ["開放式", "落地窗"], "color": "#d4a853" },
-    { "name": "主臥", "area": 8, "orientation": "南", "features": ["主衛"], "color": "#8b7cf6" }
+    { "name": "客廳", "area": 10, "orientation": "南", "features": ["開放式", "落地窗"], "color": "#d4a853", "bbox": [12, 8, 42, 35] },
+    { "name": "主臥", "area": 8, "orientation": "南", "features": ["主衛"], "color": "#8b7cf6", "bbox": [56, 8, 32, 30] }
   ],
   "strengths": ["採光充足", "動線流暢"],
   "issues": ["廚房偏小", "無儲藏室"],
   "style": "現代簡約",
   "estimatedBudget": "80-120萬"
-}`
+}
+
+bbox 為該房間在圖片上的位置框 [左上x, 左上y, 寬, 高]，單位是圖片寬高的百分比（0-100 的數字）。
+請仔細對照圖片，讓每個 bbox 盡量貼齊該房間實際範圍，相鄰房間的框邊緣應互相貼齊。`
 
 const ROOM_COLORS = ['#d4a853', '#8b7cf6', '#5cba9d', '#60a5fa', '#f87171', '#fbbf24', '#a78bfa', '#34d399', '#fb923c']
 
@@ -49,7 +55,36 @@ export default function FloorPlan({ settings }) {
   const [analyzing, setAnalyzing] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
+  // 手動修正坪數；各房間照片 { 房名: [{img, dir}] }；照片 Modal；3D 漫遊
+  const [areaOverride, setAreaOverride] = useState(null)
+  const [roomPhotos, setRoomPhotos] = useState({})
+  const [activeRoom, setActiveRoom] = useState(null)
+  const [show3D, setShow3D] = useState(false)
   const fileRef = useRef()
+  const loaded = useRef(false)
+
+  // 載入上次的分析工作階段
+  useEffect(() => {
+    const s = getFloorSession()
+    if (s?.image) {
+      setImage(s.image)
+      setResult(s.result || null)
+      setAreaOverride(s.areaOverride ?? null)
+      setRoomPhotos(s.roomPhotos || {})
+    }
+    loaded.current = true
+  }, [])
+
+  // 自動儲存工作階段（容量不足時提示）
+  useEffect(() => {
+    if (!loaded.current) return
+    try {
+      if (image) saveFloorSession({ image, result, areaOverride, roomPhotos })
+      else clearFloorSession()
+    } catch (e) {
+      setError(e.message)
+    }
+  }, [image, result, areaOverride, roomPhotos])
 
   const handleFile = (file) => {
     if (!file || !file.type.startsWith('image/')) return
@@ -58,8 +93,17 @@ export default function FloorPlan({ settings }) {
       // 壓縮圖片以符合 API 傳輸限制（Vercel 4.5MB）
       const compressed = await compressImage(e.target.result).catch(() => e.target.result)
       setImage(compressed); setResult(null); setError(null)
+      setRoomPhotos({}); setAreaOverride(null)
     }
     reader.readAsDataURL(file)
+  }
+
+  const effectiveArea = areaOverride ?? result?.totalArea
+  const hasBbox = result?.rooms?.some(r => Array.isArray(r.bbox) && r.bbox.length === 4)
+  const photoCount = Object.values(roomPhotos).reduce((s, arr) => s + arr.length, 0)
+
+  const handleSaveRoomPhotos = (roomName, photos) => {
+    setRoomPhotos(prev => ({ ...prev, [roomName]: photos }))
   }
 
   const handleDrop = (e) => {
@@ -107,7 +151,30 @@ export default function FloorPlan({ settings }) {
         {image ? (
           <div style={{ position: 'relative' }}>
             <img src={image} alt="平面圖" style={{ width: '100%', borderRadius: 'var(--r-lg)', maxHeight: 300, objectFit: 'contain', background: 'var(--bg-2)' }} />
-            <button className="btn btn-sm btn-ghost" onClick={e => { e.stopPropagation(); setImage(null); setResult(null) }}
+            {/* 各房間可點擊熱點（AI 回傳 bbox 時顯示）*/}
+            {result?.rooms?.filter(r => Array.isArray(r.bbox) && r.bbox.length === 4).map(r => (
+              <button key={r.name}
+                onClick={e => { e.stopPropagation(); setActiveRoom(r.name) }}
+                title={`${r.name}：點擊放入照片`}
+                style={{
+                  position: 'absolute',
+                  left: `${r.bbox[0] + r.bbox[2] / 2}%`,
+                  top: `${r.bbox[1] + r.bbox[3] / 2}%`,
+                  transform: 'translate(-50%, -50%)',
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
+                  fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+                  background: 'rgba(20,20,28,0.62)', backdropFilter: 'blur(6px)',
+                  border: `1.5px solid ${r.color || 'var(--c-gold)'}`,
+                  color: '#fff',
+                }}>
+                {r.name}
+                <span style={{ fontSize: 10, opacity: 0.9 }}>
+                  📷{(roomPhotos[r.name] || []).length}
+                </span>
+              </button>
+            ))}
+            <button className="btn btn-sm btn-ghost" onClick={e => { e.stopPropagation(); setImage(null); setResult(null); setRoomPhotos({}); setAreaOverride(null) }}
               style={{ position: 'absolute', top: 8, right: 8 }}>更換</button>
           </div>
         ) : (
@@ -146,8 +213,54 @@ export default function FloorPlan({ settings }) {
         </div>
       )}
 
+      {/* 3D 漫遊入口 */}
+      {result && (
+        <button
+          className="btn btn-block"
+          onClick={() => setShow3D(true)}
+          disabled={!hasBbox}
+          style={{
+            marginBottom: 16,
+            background: hasBbox ? 'linear-gradient(135deg, #8b7cf6, #5cba9d)' : 'var(--bg-2)',
+            color: hasBbox ? '#fff' : 'var(--text-3)',
+            fontWeight: 700,
+          }}
+        >
+          <Box size={17} />
+          {hasBbox
+            ? `3D 空間漫遊${photoCount > 0 ? `（已放 ${photoCount} 張照片）` : '（點平面圖上的房間放照片更有感）'}`
+            : '3D 漫遊需房間座標，請重新執行 AI 分析'}
+        </button>
+      )}
+
       {/* Result */}
-      {result && <AnalysisResult result={result} image={image} settings={settings} />}
+      {result && (
+        <AnalysisResult
+          result={result} image={image} settings={settings}
+          areaOverride={areaOverride} setAreaOverride={setAreaOverride}
+          roomPhotos={roomPhotos} onOpenRoom={setActiveRoom}
+        />
+      )}
+
+      {/* 房間照片 Modal */}
+      {activeRoom && (
+        <RoomPhotoModal
+          room={activeRoom}
+          photos={roomPhotos[activeRoom]}
+          onSave={handleSaveRoomPhotos}
+          onClose={() => setActiveRoom(null)}
+        />
+      )}
+
+      {/* 3D 漫遊 */}
+      {show3D && (
+        <Walkthrough3D
+          rooms={result?.rooms}
+          totalPing={effectiveArea}
+          roomPhotos={roomPhotos}
+          onClose={() => setShow3D(false)}
+        />
+      )}
 
       {/* External tools */}
       <div className="divider" />
@@ -169,7 +282,7 @@ export default function FloorPlan({ settings }) {
   )
 }
 
-function AnalysisResult({ result, image, settings }) {
+function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride, roomPhotos, onOpenRoom }) {
   const total = result.rooms.reduce((s, r) => s + (r.area || 0), 0) || 1
   const [generating, setGenerating] = useState(false)
   const [genImage, setGenImage] = useState(null)
@@ -178,8 +291,6 @@ function AnalysisResult({ result, image, settings }) {
   const [customPrompt, setCustomPrompt] = useState('')
   const [showCustom, setShowCustom] = useState(false)
   const [activeStyleName, setActiveStyleName] = useState(null)
-  // 手動修正坪數（AI 從照片估的常有誤差）；null 表示沿用 AI 估值
-  const [areaOverride, setAreaOverride] = useState(null)
 
   const effectiveArea = areaOverride ?? result.totalArea
   const isAreaEdited = areaOverride != null && areaOverride !== result.totalArea
@@ -267,7 +378,14 @@ function AnalysisResult({ result, image, settings }) {
           <div key={r.name} className="card" style={{ padding: '12px 14px', borderLeft: `3px solid ${r.color}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontWeight: 600, fontSize: 15 }}>{r.name}</span>
-              <span className="chip chip-muted">{r.area} 坪</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {/* 放入此房間的現場照片（3D 漫遊掛牆用）*/}
+                <button className="chip clickable" onClick={() => onOpenRoom?.(r.name)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', border: '1px solid var(--c-gold-border)', background: (roomPhotos?.[r.name]?.length) ? 'var(--c-gold-muted)' : 'transparent', color: 'var(--c-gold)', fontSize: 11, padding: '3px 8px', borderRadius: 999 }}>
+                  <Camera size={12} /> {(roomPhotos?.[r.name]?.length) || 0}
+                </button>
+                <span className="chip chip-muted">{r.area} 坪</span>
+              </div>
             </div>
             {r.features?.length > 0 && (
               <div className="tags" style={{ marginTop: 6 }}>

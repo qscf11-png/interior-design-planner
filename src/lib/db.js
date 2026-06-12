@@ -2,6 +2,7 @@ const K = {
   settings: 'idp:settings',
   properties: 'idp:properties',
   floorPlans: 'idp:floorplans',
+  floorSession: 'idp:floor-session',
   style: 'idp:style',
   budget: 'idp:budget',
   shopping: 'idp:shopping',
@@ -38,6 +39,11 @@ export const saveFloorPlan = (propertyId, data) => {
   const all = get(K.floorPlans, {})
   set(K.floorPlans, { ...all, [propertyId]: { ...data, updatedAt: new Date().toISOString() } })
 }
+
+// 格局分析工作階段（圖片、分析結果、坪數修正、各房間照片）
+export const getFloorSession = () => get(K.floorSession, null)
+export const saveFloorSession = (v) => set(K.floorSession, v)
+export const clearFloorSession = () => { try { localStorage.removeItem(K.floorSession) } catch { /* 忽略 */ } }
 
 export const getStyleData = () =>
   get(K.style, { quizAnswers: {}, images: [], palette: [], styleResult: null })
