@@ -178,6 +178,13 @@ function AnalysisResult({ result, image, settings }) {
   const [customPrompt, setCustomPrompt] = useState('')
   const [showCustom, setShowCustom] = useState(false)
   const [activeStyleName, setActiveStyleName] = useState(null)
+  // 手動修正坪數（AI 從照片估的常有誤差）；null 表示沿用 AI 估值
+  const [areaOverride, setAreaOverride] = useState(null)
+
+  const effectiveArea = areaOverride ?? result.totalArea
+  const isAreaEdited = areaOverride != null && areaOverride !== result.totalArea
+  // 未選風格時，嘗試用 AI 推薦風格的單價換算預算
+  const recommendedStyle = DESIGN_STYLES.find(s => result.style && s.name.includes(result.style.replace(/風$/, '')))
 
   const buildStylePrompt = (style) => {
     const rooms = result.rooms?.map(r => r.name).join('、') || '客廳'
@@ -188,13 +195,13 @@ function AnalysisResult({ result, image, settings }) {
       `Ceiling: completely redesign the ceiling to match the style — ${style.ceiling || 'a ceiling treatment that fits the style, with new lighting fixtures'}. Do NOT keep the original plain ceiling.`,
       `If the original room is empty, bare or unfurnished, treat this as virtual staging: fully furnish and decorate the space with a complete set of furniture, rugs, curtains, lighting and decor in this style. Do not leave the room empty.`,
       `Style details: ${style.prompt}`,
-      `Room context: ${rooms}, approximately ${result.totalArea || 30} 坪.`,
+      `Room context: ${rooms}, approximately ${effectiveArea || 30} 坪.`,
       `Output: photorealistic interior design rendering, same composition as input photo.`,
     ].join(' ')
   }
 
   const handleGenerate = async (prompt, styleName) => {
-    if (!image || !settings?.apiKey) return
+    if (!image || (!settings?.apiKey && !settings?.geminiApiKey)) return
     setGenerating(true); setGenError(null); setActiveStyleName(styleName || '自訂')
     try {
       const results = await editImage(image, prompt, settings)
@@ -230,9 +237,27 @@ function AnalysisResult({ result, image, settings }) {
       <div className="card" style={{ marginBottom: 12, borderColor: 'var(--c-gold-border)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <span style={{ fontSize: 16, fontWeight: 700 }}>格局摘要</span>
-          <span className="chip chip-gold">約 {result.totalArea} 坪</span>
+          <span className="chip chip-gold">約 {effectiveArea} 坪{isAreaEdited ? '（已修正）' : ''}</span>
         </div>
         <p style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--text-2)' }}>{result.summary}</p>
+
+        {/* 手動修正坪數：AI 估值與實際常有落差，輸入後預算即時重算 */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>📐 實際坪數</div>
+            <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>AI 估 {result.totalArea} 坪，可輸入權狀坪數重算預算</div>
+          </div>
+          <input
+            className="form-input"
+            type="number"
+            inputMode="decimal"
+            min="1"
+            step="0.5"
+            value={effectiveArea}
+            onChange={e => setAreaOverride(e.target.value === '' ? null : Math.max(0, Number(e.target.value)))}
+            style={{ width: 88, textAlign: 'center', padding: '8px 10px', fontWeight: 700, color: 'var(--c-gold)', flexShrink: 0 }}
+          />
+        </div>
       </div>
 
       {/* Rooms */}
@@ -277,18 +302,22 @@ function AnalysisResult({ result, image, settings }) {
         <div style={{ textAlign: 'right' }}>
           <div className="section-title">估計預算</div>
           <div style={{ fontWeight: 600, color: 'var(--c-gold)', transition: 'all 0.3s' }}>
-            {selectedStyle ? estimateBudget(selectedStyle, result.totalArea) : result.estimatedBudget}
+            {selectedStyle
+              ? estimateBudget(selectedStyle, effectiveArea)
+              : isAreaEdited && recommendedStyle
+                ? estimateBudget(recommendedStyle, effectiveArea)
+                : result.estimatedBudget}
           </div>
-          {selectedStyle && (
+          {(selectedStyle || (isAreaEdited && recommendedStyle)) && (
             <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
-              {selectedStyle.costPerPing[0]}-{selectedStyle.costPerPing[1]}萬/坪
+              {(selectedStyle || recommendedStyle).costPerPing[0]}-{(selectedStyle || recommendedStyle).costPerPing[1]}萬/坪 × {effectiveArea} 坪
             </div>
           )}
         </div>
       </div>
 
       {/* Style Picker + Image Generation */}
-      {image && settings?.apiKey && (
+      {image && (settings?.apiKey || settings?.geminiApiKey) && (
         <>
           <div className="divider" />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
