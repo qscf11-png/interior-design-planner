@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Upload, Sparkles, ExternalLink, RefreshCw, Image, Wand2 } from 'lucide-react'
+import { Upload, Sparkles, ExternalLink, RefreshCw, Image, Wand2, Box } from 'lucide-react'
 import { analyzeImage, editImage, compressImage } from '../lib/gaisf'
 import { getFloorSession, saveFloorSession, clearFloorSession } from '../lib/db'
 
@@ -52,6 +52,8 @@ export default function FloorPlan({ settings }) {
   const [error, setError] = useState(null)
   // 手動修正坪數（AI 估值常與權狀有落差）
   const [areaOverride, setAreaOverride] = useState(null)
+  // 各房間的 3D 視角渲染圖快取 { `風格id|房名`: dataUrl }
+  const [roomViews, setRoomViews] = useState({})
   const fileRef = useRef()
   const loaded = useRef(false)
 
@@ -62,6 +64,7 @@ export default function FloorPlan({ settings }) {
       setImage(s.image)
       setResult(s.result || null)
       setAreaOverride(s.areaOverride ?? null)
+      setRoomViews(s.roomViews || {})
     }
     loaded.current = true
   }, [])
@@ -70,12 +73,12 @@ export default function FloorPlan({ settings }) {
   useEffect(() => {
     if (!loaded.current) return
     try {
-      if (image) saveFloorSession({ image, result, areaOverride })
+      if (image) saveFloorSession({ image, result, areaOverride, roomViews })
       else clearFloorSession()
     } catch (e) {
       setError(e.message)
     }
-  }, [image, result, areaOverride])
+  }, [image, result, areaOverride, roomViews])
 
   const handleFile = (file) => {
     if (!file || !file.type.startsWith('image/')) return
@@ -84,7 +87,7 @@ export default function FloorPlan({ settings }) {
       // 壓縮圖片以符合 API 傳輸限制（Vercel 4.5MB）
       const compressed = await compressImage(e.target.result).catch(() => e.target.result)
       setImage(compressed); setResult(null); setError(null)
-      setAreaOverride(null)
+      setAreaOverride(null); setRoomViews({})
     }
     reader.readAsDataURL(file)
   }
@@ -178,6 +181,7 @@ export default function FloorPlan({ settings }) {
         <AnalysisResult
           result={result} image={image} settings={settings}
           areaOverride={areaOverride} setAreaOverride={setAreaOverride}
+          roomViews={roomViews} setRoomViews={setRoomViews}
         />
       )}
 
@@ -201,7 +205,7 @@ export default function FloorPlan({ settings }) {
   )
 }
 
-function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride }) {
+function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride, roomViews, setRoomViews }) {
   const total = result.rooms.reduce((s, r) => s + (r.area || 0), 0) || 1
   const [generating, setGenerating] = useState(false)
   const [genImage, setGenImage] = useState(null)
@@ -210,6 +214,10 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
   const [customPrompt, setCustomPrompt] = useState('')
   const [showCustom, setShowCustom] = useState(false)
   const [activeStyleName, setActiveStyleName] = useState(null)
+  // 3D 視角模擬：目前顯示的房間、生成中的房間
+  const [viewRoom, setViewRoom] = useState(null)
+  const [viewLoading, setViewLoading] = useState(null)
+  const [viewError, setViewError] = useState(null)
 
   const effectiveArea = areaOverride ?? result.totalArea
   const isAreaEdited = areaOverride != null && areaOverride !== result.totalArea
@@ -249,6 +257,38 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
     if (generating) return
     setSelectedStyle(s => s?.id === style.id ? null : style)
     setShowCustom(false)
+  }
+
+  // ─── 3D 視角模擬：依平面圖 + 風格，渲染指定房間的單視角透視圖 ───
+  const viewStyle = selectedStyle || recommendedStyle || DESIGN_STYLES[0]
+
+  const buildRoomViewPrompt = (style, room) => [
+    `Based on this floor plan image, generate ONE photorealistic interior perspective rendering of the "${room.name}" area.`,
+    `Camera: standing inside the ${room.name} at eye level (1.5m), one fixed wide-angle view looking across the room. NOT top-down, NOT a floor plan, NOT a panorama — a single realistic interior photograph.`,
+    `Respect the floor plan: room proportions, door and window positions, and relationship to adjacent spaces must follow the plan.`,
+    `Fully furnish and decorate in ${style.name} style: ${style.prompt}.`,
+    `Ceiling: ${style.ceiling}.`,
+    `Context: ${room.name} ≈ ${room.area || 5} 坪, whole home ≈ ${effectiveArea || 30} 坪.`,
+  ].join(' ')
+
+  const handleRoomView = async (room, force = false) => {
+    if (viewLoading) return
+    setViewRoom(room.name)
+    const key = `${viewStyle.id}|${room.name}`
+    if (roomViews?.[key] && !force) return  // 已生成過 → 直接顯示快取
+    setViewLoading(room.name); setViewError(null)
+    try {
+      const results = await editImage(image, buildRoomViewPrompt(viewStyle, room), settings)
+      if (results.length > 0) {
+        // 壓縮後存快取，控制 localStorage 用量
+        const compressed = await compressImage(results[0], 1024, 0.8).catch(() => results[0])
+        setRoomViews(prev => ({ ...prev, [key]: compressed }))
+      }
+    } catch (e) {
+      setViewError(e.message)
+    } finally {
+      setViewLoading(null)
+    }
   }
 
   return (
@@ -486,6 +526,75 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
                 </button>
               </div>
             </div>
+          )}
+
+          {/* 3D 視角模擬：點房間生成該區域單視角透視渲染 */}
+          {result.rooms?.length > 0 && (
+            <>
+              <div className="divider" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <Box size={18} color="var(--c-purple)" />
+                <span style={{ fontWeight: 700, fontSize: 16 }}>3D 視角模擬</span>
+              </div>
+              <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 12, lineHeight: 1.5 }}>
+                點房間，AI 依平面圖格局渲染「站在那個空間看出去」的視角圖
+                <br />目前風格：{viewStyle.emoji} {viewStyle.name}（在上方選其他風格可切換）
+              </p>
+
+              {/* 房間按鈕列 */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                {result.rooms.map(r => {
+                  const key = `${viewStyle.id}|${r.name}`
+                  const has = !!roomViews?.[key]
+                  const isLoading = viewLoading === r.name
+                  const isViewing = viewRoom === r.name
+                  return (
+                    <button key={r.name}
+                      onClick={() => handleRoomView(r)}
+                      disabled={!!viewLoading}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        padding: '7px 13px', borderRadius: 999, cursor: 'pointer',
+                        fontSize: 13, fontWeight: 600,
+                        border: `1.5px solid ${isViewing ? 'var(--c-purple)' : has ? r.color : 'var(--border)'}`,
+                        background: isViewing ? 'rgba(139,124,246,0.12)' : 'var(--bg-glass)',
+                        color: 'var(--text-1)',
+                        opacity: viewLoading && !isLoading ? 0.5 : 1,
+                      }}>
+                      {isLoading
+                        ? <span className="animate-spin" style={{ display: 'inline-block', fontSize: 12 }}>⏳</span>
+                        : <span style={{ fontSize: 12 }}>{has ? '✅' : '🧊'}</span>}
+                      {r.name}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {viewError && (
+                <div style={{ marginBottom: 10, fontSize: 13, color: 'var(--c-red)', padding: '8px 12px', background: 'rgba(224,112,112,0.06)', borderRadius: 'var(--r-sm)' }}>
+                  ⚠️ {viewError}
+                </div>
+              )}
+
+              {/* 視角圖顯示 */}
+              {viewRoom && roomViews?.[`${viewStyle.id}|${viewRoom}`] && (
+                <div className="card" style={{ marginBottom: 16, borderColor: 'rgba(139,124,246,0.35)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontWeight: 700, fontSize: 14 }}>📍 {viewRoom}</span>
+                    <span className="chip" style={{ fontSize: 11, background: 'rgba(139,124,246,0.12)', color: 'var(--c-purple)', padding: '2px 10px', borderRadius: 999 }}>
+                      {viewStyle.emoji} {viewStyle.name}
+                    </span>
+                  </div>
+                  <img src={roomViews[`${viewStyle.id}|${viewRoom}`]} alt={`${viewRoom} 視角`}
+                    style={{ width: '100%', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }} />
+                  <button className="btn btn-ghost btn-sm btn-block" style={{ marginTop: 8 }}
+                    onClick={() => handleRoomView(result.rooms.find(r => r.name === viewRoom), true)}
+                    disabled={!!viewLoading}>
+                    <RefreshCw size={13} /> 重新生成此視角
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </>
       )}
