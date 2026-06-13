@@ -261,13 +261,18 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
 
   // ─── 3D 視角模擬：依平面圖 + 風格，渲染指定房間的單視角透視圖 ───
   const viewStyle = selectedStyle || recommendedStyle || DESIGN_STYLES[0]
+  // 視覺基準：若已生成「同一風格」的風格化平面圖，用它當輸入，各房間視角才會與平面圖一致
+  const styledPlanReady = !!genImage && activeStyleName === viewStyle.name
+  const viewBase = styledPlanReady ? genImage : image
 
-  const buildRoomViewPrompt = (style, room) => [
-    `Based on this floor plan image, generate ONE photorealistic interior perspective rendering of the "${room.name}" area.`,
+  const buildRoomViewPrompt = (style, room, fromStyledPlan) => [
+    fromStyledPlan
+      ? `This image is a top-down floor plan that has ALREADY been designed in ${style.name} style. Generate ONE photorealistic eye-level interior perspective of the "${room.name}" area that faithfully matches THIS design — same flooring, same wall colors, same furniture and same overall look already shown in the plan.`
+      : `Based on this floor plan image, generate ONE photorealistic eye-level interior perspective rendering of the "${room.name}" area, designed in ${style.name} style.`,
     `Camera: standing inside the ${room.name} at eye level (1.5m), one fixed wide-angle view looking across the room. NOT top-down, NOT a floor plan, NOT a panorama — a single realistic interior photograph.`,
-    `Respect the floor plan: room proportions, door and window positions, and relationship to adjacent spaces must follow the plan.`,
-    `Fully furnish and decorate in ${style.name} style: ${style.prompt}.`,
-    `Ceiling: ${style.ceiling}.`,
+    `Follow the floor plan layout: room proportions, door and window positions, and relation to adjacent spaces.`,
+    `CONSISTENCY (critical): use the SAME flooring material, SAME wall color/finish, SAME ceiling treatment and the SAME furniture style for every room, so all generated views clearly look like the same home.`,
+    `Style: ${style.prompt}. Ceiling: ${style.ceiling}.`,
     `Context: ${room.name} ≈ ${room.area || 5} 坪, whole home ≈ ${effectiveArea || 30} 坪.`,
   ].join(' ')
 
@@ -278,7 +283,7 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
     if (roomViews?.[key] && !force) return  // 已生成過 → 直接顯示快取
     setViewLoading(room.name); setViewError(null)
     try {
-      const results = await editImage(image, buildRoomViewPrompt(viewStyle, room), settings)
+      const results = await editImage(viewBase, buildRoomViewPrompt(viewStyle, room, styledPlanReady), settings)
       if (results.length > 0) {
         // 壓縮後存快取，控制 localStorage 用量
         const compressed = await compressImage(results[0], 1024, 0.8).catch(() => results[0])
@@ -536,10 +541,22 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
                 <Box size={18} color="var(--c-purple)" />
                 <span style={{ fontWeight: 700, fontSize: 16 }}>3D 視角模擬</span>
               </div>
-              <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 12, lineHeight: 1.5 }}>
-                點房間，AI 依平面圖格局渲染「站在那個空間看出去」的視角圖
+              <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 10, lineHeight: 1.5 }}>
+                點房間，AI 渲染「站在那個空間看出去」的視角圖
                 <br />目前風格：{viewStyle.emoji} {viewStyle.name}（在上方選其他風格可切換）
               </p>
+
+              {/* 一致性提示：建議先生成風格化平面圖當基準 */}
+              <div style={{
+                fontSize: 12, lineHeight: 1.55, marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-sm)',
+                background: styledPlanReady ? 'rgba(45,157,120,0.07)' : 'rgba(212,168,83,0.07)',
+                border: `1px solid ${styledPlanReady ? 'rgba(45,157,120,0.2)' : 'var(--c-gold-border)'}`,
+                color: styledPlanReady ? 'var(--c-green)' : 'var(--c-gold)',
+              }}>
+                {styledPlanReady
+                  ? <>✅ 已以你生成的「{viewStyle.name}」平面圖為基準，各房間視角會盡量貼齊同一套配色與家具</>
+                  : <>💡 想讓各房間視角更一致？先在上方選「{viewStyle.name}」按「生成改造圖」產出風格化平面圖，視角就會以它為基準</>}
+              </div>
 
               {/* 房間按鈕列 */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
