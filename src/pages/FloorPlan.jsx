@@ -537,25 +537,26 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
           {result.rooms?.length > 0 && (
             <>
               <div className="divider" />
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
                 <Box size={18} color="var(--c-purple)" />
                 <span style={{ fontWeight: 700, fontSize: 16 }}>3D 視角模擬</span>
+                <span style={{ fontSize: 10.5, fontWeight: 700, background: 'rgba(139,124,246,0.14)', color: 'var(--c-purple)', padding: '2px 8px', borderRadius: 999 }}>
+                  實驗性 · 僅供參考
+                </span>
               </div>
               <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 10, lineHeight: 1.5 }}>
-                點房間，AI 渲染「站在那個空間看出去」的視角圖
+                點房間，AI 渲染「站在那個空間看出去」的風格示意圖
                 <br />目前風格：{viewStyle.emoji} {viewStyle.name}（在上方選其他風格可切換）
               </p>
 
-              {/* 一致性提示：建議先生成風格化平面圖當基準 */}
+              {/* 誠實的限制說明：平面圖轉透視為 AI 重新想像，非精準還原 */}
               <div style={{
-                fontSize: 12, lineHeight: 1.55, marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-sm)',
-                background: styledPlanReady ? 'rgba(45,157,120,0.07)' : 'rgba(212,168,83,0.07)',
-                border: `1px solid ${styledPlanReady ? 'rgba(45,157,120,0.2)' : 'var(--c-gold-border)'}`,
-                color: styledPlanReady ? 'var(--c-green)' : 'var(--c-gold)',
+                fontSize: 12, lineHeight: 1.6, marginBottom: 12, padding: '9px 12px', borderRadius: 'var(--r-sm)',
+                background: 'rgba(212,168,83,0.07)', border: '1px solid var(--c-gold-border)', color: 'var(--text-2)',
               }}>
-                {styledPlanReady
-                  ? <>✅ 已以你生成的「{viewStyle.name}」平面圖為基準，各房間視角會盡量貼齊同一套配色與家具</>
-                  : <>💡 想讓各房間視角更一致？先在上方選「{viewStyle.name}」按「生成改造圖」產出風格化平面圖，視角就會以它為基準</>}
+                ⚠️ AI 是「看平面圖重新想像」整個空間，<b style={{ color: 'var(--c-gold)' }}>不會與你的格局精準對應</b>，僅用於感受該風格的氛圍。
+                想要角度、格局正確的效果圖，建議改用<b>現場實拍照片</b>上傳改造。
+                {!styledPlanReady && <><br />💡 先在上方選「{viewStyle.name}」按「生成改造圖」，視角會以那張風格化平面圖為基準，較一致。</>}
               </div>
 
               {/* 房間按鈕列 */}
