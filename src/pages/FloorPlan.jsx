@@ -3,6 +3,7 @@ import { Upload, Sparkles, ExternalLink, RefreshCw, Image, Wand2, Box } from 'lu
 import { analyzeImage, editImage, compressImage } from '../lib/gaisf'
 import { getFloorSession, saveFloorSession, clearFloorSession } from '../lib/db'
 import Lightbox from '../components/Lightbox'
+import FavoriteButton from '../components/FavoriteButton'
 
 const FLOOR_PLAN_PROMPT = `你是一位專業的室內設計師，請仔細分析這張平面圖或房間照片，以JSON格式回傳分析結果。
 只回傳JSON，不要任何其他說明文字。若無法確定某些數值，請合理估計。
@@ -512,7 +513,10 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
             <div className="card gold-border" style={{ marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <div className="section-title" style={{ margin: 0 }}>改造對比</div>
-                {activeStyleName && <span className="chip chip-gold" style={{ fontSize: 11 }}>{activeStyleName}</span>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {activeStyleName && <span className="chip chip-gold" style={{ fontSize: 11 }}>{activeStyleName}</span>}
+                  <FavoriteButton img={genImage} title={`${activeStyleName || '改造'}・設計圖`} />
+                </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <div>
@@ -606,9 +610,12 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
                 <div className="card" style={{ marginBottom: 16, borderColor: 'rgba(139,124,246,0.35)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                     <span style={{ fontWeight: 700, fontSize: 14 }}>📍 {viewRoom}</span>
-                    <span className="chip" style={{ fontSize: 11, background: 'rgba(139,124,246,0.12)', color: 'var(--c-purple)', padding: '2px 10px', borderRadius: 999 }}>
-                      {viewStyle.emoji} {viewStyle.name}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className="chip" style={{ fontSize: 11, background: 'rgba(139,124,246,0.12)', color: 'var(--c-purple)', padding: '2px 10px', borderRadius: 999 }}>
+                        {viewStyle.emoji} {viewStyle.name}
+                      </span>
+                      <FavoriteButton img={roomViews[`${viewStyle.id}|${viewRoom}`]} title={`${viewRoom}・${viewStyle.name}`} />
+                    </div>
                   </div>
                   <img src={roomViews[`${viewStyle.id}|${viewRoom}`]} alt={`${viewRoom} 視角`}
                     onClick={() => setLightbox({ src: roomViews[`${viewStyle.id}|${viewRoom}`], title: `${viewRoom}・${viewStyle.name}`, fav: true })}
