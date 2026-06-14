@@ -1,12 +1,15 @@
 import { useState, useRef, useEffect } from 'react'
 import { X, ZoomIn, ZoomOut, Download } from 'lucide-react'
 
-// 全螢幕圖片燈箱：點圖切換 1x/2.5x、放大後可拖曳平移、滾輪/按鈕縮放、Esc 關閉
+// 全螢幕圖片燈箱
+// 手機：雙指縮放 (pinch)、單指拖曳平移、單指輕點切換 1x/2.5x
+// 桌機：滾輪縮放、點圖切換、拖曳平移、+/- 按鈕
 export default function Lightbox({ src, alt = '', onClose }) {
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
-  const drag = useRef(null)
-  const moved = useRef(false)
+  const pointers = useRef(new Map())  // pointerId -> { x, y }
+  const pinch = useRef(null)          // { dist, zoom }
+  const tap = useRef(null)            // { moved }
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
@@ -15,33 +18,53 @@ export default function Lightbox({ src, alt = '', onClose }) {
   }, [onClose])
 
   const clampZoom = (z) => Math.max(1, Math.min(4, z))
-  const reset = () => { setZoom(1); setPan({ x: 0, y: 0 }) }
+  const apply = (z) => { const c = clampZoom(z); setZoom(c); if (c === 1) setPan({ x: 0, y: 0 }) }
+  const toggleZoom = () => { if (zoom > 1) apply(1); else setZoom(2.5) }
 
-  const toggleZoom = () => {
-    if (moved.current) return  // 拖曳後放開不觸發切換
-    if (zoom > 1) reset()
-    else setZoom(2.5)
-  }
-
-  const onWheel = (e) => {
-    const next = clampZoom(zoom - e.deltaY * 0.002)
-    setZoom(next)
-    if (next === 1) setPan({ x: 0, y: 0 })
+  const dist2 = () => {
+    const [a, b] = [...pointers.current.values()]
+    return Math.hypot(a.x - b.x, a.y - b.y)
   }
 
   const onPointerDown = (e) => {
-    if (zoom <= 1) return
-    moved.current = false
-    drag.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y }
     e.currentTarget.setPointerCapture?.(e.pointerId)
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointers.current.size === 2) {
+      pinch.current = { dist: dist2(), zoom }   // 起始雙指距離
+      tap.current = null
+    } else if (pointers.current.size === 1) {
+      tap.current = { moved: false }
+    }
   }
+
   const onPointerMove = (e) => {
-    if (!drag.current) return
-    const dx = e.clientX - drag.current.x, dy = e.clientY - drag.current.y
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved.current = true
-    setPan({ x: drag.current.px + dx, y: drag.current.py + dy })
+    const prev = pointers.current.get(e.pointerId)
+    if (!prev) return
+
+    if (pointers.current.size === 2 && pinch.current) {
+      // 雙指縮放：依兩指距離比例調整
+      pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      const ratio = dist2() / (pinch.current.dist || 1)
+      apply(pinch.current.zoom * ratio)
+      return
+    }
+
+    // 單指：放大時平移
+    const dx = e.clientX - prev.x, dy = e.clientY - prev.y
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) { if (tap.current) tap.current.moved = true }
+    if (zoom > 1) setPan(p => ({ x: p.x + dx, y: p.y + dy }))
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
   }
-  const onPointerUp = () => { drag.current = null }
+
+  const onPointerUp = (e) => {
+    pointers.current.delete(e.pointerId)
+    if (pointers.current.size < 2) pinch.current = null
+    // 單指輕點（沒移動、所有手指放開）→ 切換放大
+    if (pointers.current.size === 0 && tap.current && !tap.current.moved) toggleZoom()
+    if (pointers.current.size === 0) tap.current = null
+  }
+
+  const onWheel = (e) => apply(zoom - e.deltaY * 0.002)
 
   const btnStyle = {
     width: 42, height: 42, borderRadius: 12, border: '1px solid rgba(255,255,255,0.2)',
@@ -51,20 +74,20 @@ export default function Lightbox({ src, alt = '', onClose }) {
 
   return (
     <div onClick={(e) => e.target === e.currentTarget && onClose()}
-      style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none', overflow: 'hidden' }}>
+      style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
 
+      {/* 手勢層：touchAction none 才能攔截瀏覽器原生縮放 */}
       <img src={src} alt={alt} draggable={false}
-        onClick={toggleZoom}
         onWheel={onWheel}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         style={{
-          maxWidth: '94vw', maxHeight: '88vh', objectFit: 'contain', borderRadius: 8,
+          maxWidth: '96vw', maxHeight: '86vh', objectFit: 'contain', borderRadius: 8,
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-          transition: drag.current ? 'none' : 'transform 0.2s ease',
-          cursor: zoom > 1 ? 'grab' : 'zoom-in', userSelect: 'none',
+          transition: pointers.current.size ? 'none' : 'transform 0.2s ease',
+          cursor: zoom > 1 ? 'grab' : 'zoom-in', userSelect: 'none', touchAction: 'none',
         }} />
 
       {/* 關閉 */}
@@ -75,15 +98,11 @@ export default function Lightbox({ src, alt = '', onClose }) {
 
       {/* 縮放控制列 */}
       <div style={{ position: 'absolute', bottom: 'max(18px, env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 10, alignItems: 'center' }}>
-        <button onClick={() => { const z = clampZoom(zoom - 0.5); setZoom(z); if (z === 1) setPan({ x: 0, y: 0 }) }} title="縮小" style={btnStyle}>
-          <ZoomOut size={18} />
-        </button>
+        <button onClick={() => apply(zoom - 0.5)} title="縮小" style={btnStyle}><ZoomOut size={18} /></button>
         <span style={{ minWidth: 52, textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#fff', background: 'rgba(20,20,28,0.6)', backdropFilter: 'blur(10px)', padding: '8px 0', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)' }}>
           {Math.round(zoom * 100)}%
         </span>
-        <button onClick={() => setZoom(z => clampZoom(z + 0.5))} title="放大" style={btnStyle}>
-          <ZoomIn size={18} />
-        </button>
+        <button onClick={() => apply(zoom + 0.5)} title="放大" style={btnStyle}><ZoomIn size={18} /></button>
         <a href={src} download={`${alt || 'design'}.png`} title="下載原圖" onClick={e => e.stopPropagation()} style={{ ...btnStyle, textDecoration: 'none' }}>
           <Download size={18} />
         </a>
@@ -91,7 +110,7 @@ export default function Lightbox({ src, alt = '', onClose }) {
 
       {/* 操作提示 */}
       <div style={{ position: 'absolute', top: 'max(14px, env(safe-area-inset-top))', left: 16, fontSize: 12, color: 'rgba(255,255,255,0.7)', padding: '8px 12px', borderRadius: 10, background: 'rgba(20,20,28,0.5)', backdropFilter: 'blur(8px)' }}>
-        點圖放大 · 拖曳移動 · 滾輪縮放
+        雙指縮放 · 拖曳移動 · 輕點放大
       </div>
     </div>
   )
