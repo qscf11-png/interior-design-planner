@@ -224,6 +224,10 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
 
   const effectiveArea = areaOverride ?? result.totalArea
   const isAreaEdited = areaOverride != null && areaOverride !== result.totalArea
+  // 各房間坪數依占比換算：修正總坪數後，下方各空間坪數即時連動
+  const roomArea = (r) => isAreaEdited
+    ? Math.round((effectiveArea * (r.area || 0) / total) * 10) / 10
+    : r.area
   // 坪數輸入緩衝：允許清空再輸入，不會被計算值搶回去
   const [areaText, setAreaText] = useState(null)
   // 未選風格時，嘗試用 AI 推薦風格的單價換算預算
@@ -276,7 +280,7 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
     `Follow the floor plan layout: room proportions, door and window positions, and relation to adjacent spaces.`,
     `CONSISTENCY (critical): use the SAME flooring material, SAME wall color/finish, SAME ceiling treatment and the SAME furniture style for every room, so all generated views clearly look like the same home.`,
     `Style: ${style.prompt}. Ceiling: ${style.ceiling}.`,
-    `Context: ${room.name} ≈ ${room.area || 5} 坪, whole home ≈ ${effectiveArea || 30} 坪.`,
+    `Context: ${room.name} ≈ ${roomArea(room) || 5} 坪, whole home ≈ ${effectiveArea || 30} 坪.`,
   ].join(' ')
 
   const handleRoomView = async (room, force = false) => {
@@ -353,7 +357,7 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
           <div key={r.name} className="card" style={{ padding: '12px 14px', borderLeft: `3px solid ${r.color}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontWeight: 600, fontSize: 15 }}>{r.name}</span>
-              <span className="chip chip-muted">{r.area} 坪</span>
+              <span className="chip chip-muted">{roomArea(r)} 坪</span>
             </div>
             {r.features?.length > 0 && (
               <div className="tags" style={{ marginTop: 6 }}>
@@ -513,11 +517,11 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-3)', marginBottom: 4, textAlign: 'center' }}>原始照片</div>
-                  <img src={image} alt="原始" onClick={() => setLightbox(image)} style={{ width: '100%', borderRadius: 'var(--r-md)', aspectRatio: '1', objectFit: 'cover', border: '1px solid var(--border)', cursor: 'zoom-in' }} />
+                  <img src={image} alt="原始" onClick={() => setLightbox({ src: image, title: '原始圖', fav: false })} style={{ width: '100%', borderRadius: 'var(--r-md)', aspectRatio: '1', objectFit: 'cover', border: '1px solid var(--border)', cursor: 'zoom-in' }} />
                 </div>
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-gold)', marginBottom: 4, textAlign: 'center' }}>AI 改造 🔍</div>
-                  <img src={genImage} alt="改造後" onClick={() => setLightbox(genImage)} style={{ width: '100%', borderRadius: 'var(--r-md)', aspectRatio: '1', objectFit: 'cover', border: '1px solid var(--c-gold-border)', cursor: 'zoom-in' }} />
+                  <img src={genImage} alt="改造後" onClick={() => setLightbox({ src: genImage, title: `${activeStyleName || '改造'}・設計圖`, fav: true })} style={{ width: '100%', borderRadius: 'var(--r-md)', aspectRatio: '1', objectFit: 'cover', border: '1px solid var(--c-gold-border)', cursor: 'zoom-in' }} />
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
@@ -607,7 +611,7 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
                     </span>
                   </div>
                   <img src={roomViews[`${viewStyle.id}|${viewRoom}`]} alt={`${viewRoom} 視角`}
-                    onClick={() => setLightbox(roomViews[`${viewStyle.id}|${viewRoom}`])}
+                    onClick={() => setLightbox({ src: roomViews[`${viewStyle.id}|${viewRoom}`], title: `${viewRoom}・${viewStyle.name}`, fav: true })}
                     style={{ width: '100%', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', cursor: 'zoom-in' }} />
                   <button className="btn btn-ghost btn-sm btn-block" style={{ marginTop: 8 }}
                     onClick={() => handleRoomView(result.rooms.find(r => r.name === viewRoom), true)}
@@ -621,8 +625,8 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
         </>
       )}
 
-      {/* 點圖放大燈箱 */}
-      {lightbox && <Lightbox src={lightbox} alt="設計圖" onClose={() => setLightbox(null)} />}
+      {/* 點圖放大燈箱（生成圖可收藏） */}
+      {lightbox && <Lightbox src={lightbox.src} alt={lightbox.title} canFavorite={lightbox.fav} onClose={() => setLightbox(null)} />}
     </div>
   )
 }

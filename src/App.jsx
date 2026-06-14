@@ -1,11 +1,12 @@
 import { useState, useCallback } from 'react'
-import { Home, Building2, LayoutGrid, Palette, Wallet, Settings, Sparkles, X, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, ChevronDown, LogIn, LogOut, User } from 'lucide-react'
+import { Home, Building2, LayoutGrid, Palette, Wallet, Settings, Sparkles, X, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, ChevronDown, LogIn, LogOut, User, Images } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import Properties from './pages/Properties'
 import FloorPlan from './pages/FloorPlan'
 import StyleBoard from './pages/StyleBoard'
 import Budget from './pages/Budget'
 import AiAdvisor from './components/AiAdvisor'
+import FavoritesGallery from './components/FavoritesGallery'
 import { getSettings, saveSettings } from './lib/db'
 import { validateGaisfKey, validateGeminiKey, GAISF_MODELS, GEMINI_MODELS_DEFAULT, PROVIDERS } from './lib/gaisf'
 import { useAuth } from './hooks/useAuth'
@@ -24,6 +25,7 @@ export default function App() {
   const [tab, setTab] = useState('dashboard')
   const [showSettings, setShowSettings] = useState(false)
   const [showAdvisor, setShowAdvisor] = useState(false)
+  const [showFavorites, setShowFavorites] = useState(false)
   const [settings, setSettings] = useState(() => getSettings())
 
   const handleSaveSettings = (s) => {
@@ -62,6 +64,9 @@ export default function App() {
           <span>{settings.projectName || '室內設計規劃'}</span>
         </div>
         <div className="header-actions">
+          <button className="icon-btn" onClick={() => setShowFavorites(true)} title="設計收藏">
+            <Images size={20} />
+          </button>
           {user ? (
             <>
               <button className="icon-btn" onClick={() => setShowSettings(true)} title="設定">
@@ -116,6 +121,8 @@ export default function App() {
         onClose={() => setShowAdvisor(false)}
         settings={settings}
       />
+
+      {showFavorites && <FavoritesGallery onClose={() => setShowFavorites(false)} />}
     </div>
   )
 }

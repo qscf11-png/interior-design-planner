@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Plus, X, Trash2, Camera, Star } from 'lucide-react'
-import { getProperties, addProperty, updateProperty, deleteProperty } from '../lib/db'
+import { getProperties, addProperty, updateProperty, deleteProperty, getFavorites } from '../lib/db'
+import Lightbox from '../components/Lightbox'
 
 const STATUS_OPTIONS = [
   { value: 'interested', label: '感興趣', chip: 'chip-gold' },
@@ -269,6 +270,9 @@ function PropertyForm({ editId, initial, onClose, onSaved }) {
 
 function PropertyDetail({ item, onClose, onEdit }) {
   const statusInfo = STATUS_OPTIONS.find(s => s.value === item.status) || STATUS_OPTIONS[0]
+  // 這個物件收藏的設計圖
+  const designFavs = getFavorites().filter(f => f.propertyId === item.id)
+  const [view, setView] = useState(null)
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal-content">
@@ -310,9 +314,25 @@ function PropertyDetail({ item, onClose, onEdit }) {
               {item.cons.map((c, i) => <div key={i} style={{ fontSize: 14, color: 'var(--c-red)', marginTop: 4 }}>✗ {c}</div>)}
             </div>
           )}
-          {item.notes && <div><div className="section-title">備註</div><div style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.6 }}>{item.notes}</div></div>}
+          {item.notes && <div style={{ marginBottom: 12 }}><div className="section-title">備註</div><div style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.6 }}>{item.notes}</div></div>}
+
+          {designFavs.length > 0 && (
+            <div>
+              <div className="section-title">🖼️ 設計收藏（{designFavs.length}）</div>
+              <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+                {designFavs.map(f => (
+                  <div key={f.id} style={{ flexShrink: 0 }}>
+                    <img src={f.img} alt={f.title} onClick={() => setView(f.img)}
+                      style={{ height: 120, borderRadius: 'var(--r-md)', cursor: 'zoom-in', border: '1px solid var(--c-gold-border)' }} />
+                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 3, maxWidth: 160, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.title}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
+      {view && <Lightbox src={view} alt="設計收藏" onClose={() => setView(null)} />}
     </div>
   )
 }

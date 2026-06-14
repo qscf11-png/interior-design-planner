@@ -3,6 +3,7 @@ const K = {
   properties: 'idp:properties',
   floorPlans: 'idp:floorplans',
   floorSession: 'idp:floor-session',
+  favorites: 'idp:favorites',
   style: 'idp:style',
   budget: 'idp:budget',
   shopping: 'idp:shopping',
@@ -39,6 +40,19 @@ export const saveFloorPlan = (propertyId, data) => {
   const all = get(K.floorPlans, {})
   set(K.floorPlans, { ...all, [propertyId]: { ...data, updatedAt: new Date().toISOString() } })
 }
+
+// 設計收藏（喜歡的生成圖）；propertyId 為 null 表示未分類
+export const getFavorites = () => get(K.favorites, [])
+export const addFavorite = (item) => {
+  const arr = getFavorites()
+  const newItem = { ...item, id: Date.now().toString(), createdAt: new Date().toISOString() }
+  set(K.favorites, [newItem, ...arr])  // 可能 throw QuotaExceeded（呼叫端 catch）
+  return newItem
+}
+export const deleteFavorite = (id) =>
+  set(K.favorites, getFavorites().filter(f => f.id !== id))
+// 以圖片內容比對是否已收藏（同一張 dataUrl 視為同一張）
+export const findFavoriteByImg = (img) => getFavorites().find(f => f.img === img) || null
 
 // 格局分析工作階段（圖片、分析結果、坪數修正、各房間照片）
 export const getFloorSession = () => get(K.floorSession, null)
