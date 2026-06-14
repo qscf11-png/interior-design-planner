@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Upload, Sparkles, ExternalLink, RefreshCw, Image, Wand2, Box } from 'lucide-react'
 import { analyzeImage, editImage, compressImage } from '../lib/gaisf'
 import { getFloorSession, saveFloorSession, clearFloorSession } from '../lib/db'
+import Lightbox from '../components/Lightbox'
 
 const FLOOR_PLAN_PROMPT = `你是一位專業的室內設計師，請仔細分析這張平面圖或房間照片，以JSON格式回傳分析結果。
 只回傳JSON，不要任何其他說明文字。若無法確定某些數值，請合理估計。
@@ -218,6 +219,8 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
   const [viewRoom, setViewRoom] = useState(null)
   const [viewLoading, setViewLoading] = useState(null)
   const [viewError, setViewError] = useState(null)
+  // 點圖放大的燈箱來源（null 表示關閉）
+  const [lightbox, setLightbox] = useState(null)
 
   const effectiveArea = areaOverride ?? result.totalArea
   const isAreaEdited = areaOverride != null && areaOverride !== result.totalArea
@@ -510,11 +513,11 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-3)', marginBottom: 4, textAlign: 'center' }}>原始照片</div>
-                  <img src={image} alt="原始" style={{ width: '100%', borderRadius: 'var(--r-md)', aspectRatio: '1', objectFit: 'cover', border: '1px solid var(--border)' }} />
+                  <img src={image} alt="原始" onClick={() => setLightbox(image)} style={{ width: '100%', borderRadius: 'var(--r-md)', aspectRatio: '1', objectFit: 'cover', border: '1px solid var(--border)', cursor: 'zoom-in' }} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-gold)', marginBottom: 4, textAlign: 'center' }}>AI 改造</div>
-                  <img src={genImage} alt="改造後" style={{ width: '100%', borderRadius: 'var(--r-md)', aspectRatio: '1', objectFit: 'cover', border: '1px solid var(--c-gold-border)' }} />
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-gold)', marginBottom: 4, textAlign: 'center' }}>AI 改造 🔍</div>
+                  <img src={genImage} alt="改造後" onClick={() => setLightbox(genImage)} style={{ width: '100%', borderRadius: 'var(--r-md)', aspectRatio: '1', objectFit: 'cover', border: '1px solid var(--c-gold-border)', cursor: 'zoom-in' }} />
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
@@ -604,7 +607,8 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
                     </span>
                   </div>
                   <img src={roomViews[`${viewStyle.id}|${viewRoom}`]} alt={`${viewRoom} 視角`}
-                    style={{ width: '100%', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }} />
+                    onClick={() => setLightbox(roomViews[`${viewStyle.id}|${viewRoom}`])}
+                    style={{ width: '100%', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', cursor: 'zoom-in' }} />
                   <button className="btn btn-ghost btn-sm btn-block" style={{ marginTop: 8 }}
                     onClick={() => handleRoomView(result.rooms.find(r => r.name === viewRoom), true)}
                     disabled={!!viewLoading}>
@@ -616,6 +620,9 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
           )}
         </>
       )}
+
+      {/* 點圖放大燈箱 */}
+      {lightbox && <Lightbox src={lightbox} alt="設計圖" onClose={() => setLightbox(null)} />}
     </div>
   )
 }
