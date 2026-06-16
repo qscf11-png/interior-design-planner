@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { Sparkles, Loader2 } from 'lucide-react'
-import { calculateFengshui, DIRECTIONS, SHA_OPTIONS, TK_GUA } from '../lib/fengshui'
+import { calculateFengshui, DIRECTIONS, SHA_OPTIONS, TK_GUA, FAMILY, familyFit } from '../lib/fengshui'
 import { streamChat } from '../lib/gaisf'
 
 // 評級顏色（對應 App 既有 CSS 變數）
@@ -136,6 +136,47 @@ export default function FengShui({ settings }) {
         {result.remedies.map((r, i) => (
           <div key={i} style={{ fontSize: 14, color: 'var(--text-2)', marginTop: 6, lineHeight: 1.6 }}>• {r}</div>
         ))}
+      </div>
+
+      {/* 全家方位適配 */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="section-title">👨‍👩‍👧‍👦 全家方位適配（誰住哪個方位吉）</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 10, lineHeight: 1.5 }}>
+          目前主臥【<b>{bedroom}</b>】對全家：{familyFit(bedroom).map(m => `${m.name}${m.good ? ' ✓' : ' ✗'}`).join('　')}
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-3)', fontWeight: 600 }}>方位</th>
+                {FAMILY.map(m => (
+                  <th key={m.name} style={{ padding: '6px 4px', color: 'var(--text-3)', fontWeight: 600 }}>
+                    {m.name}<div style={{ fontSize: 10, fontWeight: 400 }}>{m.note}</div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {DIRECTIONS.map(d => {
+                const fit = familyFit(d)
+                const isBed = d === bedroom, isDoor = d === door
+                return (
+                  <tr key={d} style={{ borderTop: '1px solid var(--border)', background: isBed ? 'rgba(124,108,255,0.08)' : 'transparent' }}>
+                    <td style={{ padding: '6px 8px', fontWeight: 600 }}>{d}{isBed ? ' 🛏️' : ''}{isDoor ? ' 🚪' : ''}</td>
+                    {fit.map(m => (
+                      <td key={m.name} style={{ textAlign: 'center', padding: '6px 4px', color: m.good ? 'var(--c-green)' : 'var(--text-3)', fontWeight: m.good ? 700 : 400 }}>
+                        {m.good ? '✓' : '·'}
+                      </td>
+                    ))}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 8, lineHeight: 1.5 }}>
+          🛏️=目前主臥　🚪=目前大門。✓ 表示該方位是這位家人的吉方（東四方：北/南/東/東南；西四方：西/西北/西南/東北）。
+        </div>
       </div>
 
       {/* AI 白話解讀（接達哥 GAISF / Gemini） */}

@@ -116,3 +116,29 @@ export function calculateFengshui({ facing, door, bedroom, kitchen, shas = [], l
     inputs: { facing, door, bedroom, kitchen, shas, lighting },
   }
 }
+
+// ─── 全家八宅適配（全家適配版）───
+export const GROUP_GOOD = {
+  '東四': ['北', '南', '東', '東南'],
+  '西四': ['西', '西北', '西南', '東北'],
+}
+
+// 全家成員命卦群組
+// 註：太太(1981女)依你系統列「東四(與戶長同組)」；標準三元公式則為「艮·西四」。
+//     此處採你系統分類；若要改成西四，把下面 group 改為 '西四' 即可。
+export const FAMILY = [
+  { name: '你',   note: '巽·東四',   group: '東四' },
+  { name: '太太', note: '系統·東四', group: '東四' },
+  { name: '兒子', note: '坤·西四',   group: '西四' },
+  { name: '女兒', note: '坤土·西四', group: '西四' },
+]
+
+// 某方位對某群組是吉(true)/凶(false)
+export function isGoodForGroup(direction, group) {
+  return (GROUP_GOOD[group] || []).includes(direction)
+}
+
+// 回傳全家對某方位的吉凶（用於分房適配表）
+export function familyFit(direction) {
+  return FAMILY.map(m => ({ name: m.name, note: m.note, group: m.group, good: isGoodForGroup(direction, m.group) }))
+}
