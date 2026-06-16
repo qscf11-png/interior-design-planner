@@ -1,10 +1,11 @@
 import { useState, useCallback } from 'react'
-import { Home, Building2, LayoutGrid, Palette, Wallet, Settings, Sparkles, X, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, ChevronDown, LogIn, LogOut, User, Images } from 'lucide-react'
+import { Home, Building2, LayoutGrid, Palette, Wallet, Compass, Settings, Sparkles, X, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, ChevronDown, LogIn, LogOut, User, Images } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import Properties from './pages/Properties'
 import FloorPlan from './pages/FloorPlan'
 import StyleBoard from './pages/StyleBoard'
 import Budget from './pages/Budget'
+import FengShui from './pages/FengShui'
 import AiAdvisor from './components/AiAdvisor'
 import FavoritesGallery from './components/FavoritesGallery'
 import { getSettings, saveSettings } from './lib/db'
@@ -18,6 +19,7 @@ const TABS = [
   { id: 'floorplan',  label: '格局', icon: LayoutGrid },
   { id: 'style',      label: '風格', icon: Palette },
   { id: 'budget',     label: '預算', icon: Wallet },
+  { id: 'fengshui',   label: '風水', icon: Compass },
 ]
 
 export default function App() {
@@ -54,6 +56,7 @@ export default function App() {
     floorplan:  <FloorPlan settings={settings} />,
     style:      <StyleBoard settings={settings} />,
     budget:     <Budget />,
+    fengshui:   <FengShui settings={settings} />,
   }
 
   return (
