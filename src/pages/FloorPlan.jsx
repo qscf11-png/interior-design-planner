@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { Upload, Sparkles, ExternalLink, RefreshCw, Image, Wand2, Box } from 'lucide-react'
-import { analyzeImage, editImage, compressImage } from '../lib/gaisf'
+import { Upload, Sparkles, ExternalLink, RefreshCw, Image, Wand2, Box, Zap } from 'lucide-react'
+import { analyzeImage, editImage, compressImage, askText } from '../lib/gaisf'
 import { getFloorSession, saveFloorSession, clearFloorSession } from '../lib/db'
 import Lightbox from '../components/Lightbox'
 import FavoriteButton from '../components/FavoriteButton'
@@ -56,6 +56,8 @@ export default function FloorPlan({ settings }) {
   const [areaOverride, setAreaOverride] = useState(null)
   // 各房間的 3D 視角渲染圖快取 { `風格id|房名`: dataUrl }
   const [roomViews, setRoomViews] = useState({})
+  // 水電規劃建議（強電/弱電/冷氣/給排水）
+  const [mepPlan, setMepPlan] = useState(null)
   const fileRef = useRef()
   const loaded = useRef(false)
 
@@ -67,6 +69,7 @@ export default function FloorPlan({ settings }) {
       setResult(s.result || null)
       setAreaOverride(s.areaOverride ?? null)
       setRoomViews(s.roomViews || {})
+      setMepPlan(s.mepPlan || null)
     }
     loaded.current = true
   }, [])
@@ -75,12 +78,12 @@ export default function FloorPlan({ settings }) {
   useEffect(() => {
     if (!loaded.current) return
     try {
-      if (image) saveFloorSession({ image, result, areaOverride, roomViews })
+      if (image) saveFloorSession({ image, result, areaOverride, roomViews, mepPlan })
       else clearFloorSession()
     } catch (e) {
       setError(e.message)
     }
-  }, [image, result, areaOverride, roomViews])
+  }, [image, result, areaOverride, roomViews, mepPlan])
 
   const handleFile = (file) => {
     if (!file || !file.type.startsWith('image/')) return
@@ -89,7 +92,7 @@ export default function FloorPlan({ settings }) {
       // 壓縮圖片以符合 API 傳輸限制（Vercel 4.5MB）
       const compressed = await compressImage(e.target.result).catch(() => e.target.result)
       setImage(compressed); setResult(null); setError(null)
-      setAreaOverride(null); setRoomViews({})
+      setAreaOverride(null); setRoomViews({}); setMepPlan(null)
     }
     reader.readAsDataURL(file)
   }
@@ -184,6 +187,7 @@ export default function FloorPlan({ settings }) {
           result={result} image={image} settings={settings}
           areaOverride={areaOverride} setAreaOverride={setAreaOverride}
           roomViews={roomViews} setRoomViews={setRoomViews}
+          mepPlan={mepPlan} setMepPlan={setMepPlan}
         />
       )}
 
@@ -207,7 +211,15 @@ export default function FloorPlan({ settings }) {
   )
 }
 
-function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride, roomViews, setRoomViews }) {
+// 水電規劃四大類
+const MEP_CATS = [
+  { key: 'strong', icon: '🔌', label: '強電 / 插座迴路', color: '#fbbf24' },
+  { key: 'weak',   icon: '📡', label: '弱電 / 網路信號', color: '#60a5fa' },
+  { key: 'hvac',   icon: '❄️', label: '冷氣空調',       color: '#5cba9d' },
+  { key: 'water',  icon: '🚰', label: '給排水',         color: '#a78bfa' },
+]
+
+function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride, roomViews, setRoomViews, mepPlan, setMepPlan }) {
   const total = result.rooms.reduce((s, r) => s + (r.area || 0), 0) || 1
   const [generating, setGenerating] = useState(false)
   const [genImage, setGenImage] = useState(null)
@@ -222,6 +234,9 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
   const [viewError, setViewError] = useState(null)
   // 點圖放大的燈箱來源（null 表示關閉）
   const [lightbox, setLightbox] = useState(null)
+  // 水電規劃建議產生中 / 錯誤
+  const [mepLoading, setMepLoading] = useState(false)
+  const [mepError, setMepError] = useState(null)
 
   const effectiveArea = areaOverride ?? result.totalArea
   const isAreaEdited = areaOverride != null && areaOverride !== result.totalArea
@@ -301,6 +316,37 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
       setViewError(e.message)
     } finally {
       setViewLoading(null)
+    }
+  }
+
+  // ─── 水電規劃建議 ───
+  const buildMepPrompt = () => {
+    const rooms = result.rooms.map(r => `${r.name}(約${roomArea(r)}坪${r.features?.length ? '、' + r.features.join('/') : ''})`).join('、')
+    return `你是台灣資深室內裝修水電規劃顧問。以下是一間約${effectiveArea || 30}坪住宅的格局：${rooms}。
+請依台灣住宅常見作法與法規觀念，提供「規劃前參考建議」，協助屋主與水電師傅溝通。
+只回傳JSON、不要任何其他文字。每項建議簡潔具體、一句話、務實可行：
+{
+  "strong": ["強電/插座/專用迴路建議"],
+  "weak": ["弱電/網路/影音/對講/監視建議"],
+  "hvac": ["冷氣噸數估算、室內外機位置、冷媒管與排水走向建議"],
+  "water": ["給排水、冷熱水、洗衣機/淨水/排水建議"],
+  "perRoom": [{"room":"客廳","items":["此空間水電重點"]}]
+}`
+  }
+
+  const handleMep = async () => {
+    if (mepLoading) return
+    if (!settings?.apiKey && !settings?.geminiApiKey) { setMepError('請先在設定中填入 API Key'); return }
+    setMepLoading(true); setMepError(null)
+    try {
+      const raw = await askText(buildMepPrompt(), settings)
+      const json = raw.match(/\{[\s\S]*\}/)?.[0]
+      if (!json) throw new Error('無法解析建議結果')
+      setMepPlan(JSON.parse(json))
+    } catch (e) {
+      setMepError(e.message === 'NO_CONFIG' ? '請先在設定中填入 API Key' : `產生失敗：${e.message}`)
+    } finally {
+      setMepLoading(false)
     }
   }
 
@@ -627,6 +673,65 @@ function AnalysisResult({ result, image, settings, areaOverride, setAreaOverride
                   </button>
                 </div>
               )}
+            </>
+          )}
+
+          {/* 水電規劃建議 */}
+          <div className="divider" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+            <Zap size={18} color="var(--c-blue)" />
+            <span style={{ fontWeight: 700, fontSize: 16 }}>水電規劃建議</span>
+            <span style={{ fontSize: 10.5, fontWeight: 700, background: 'rgba(96,165,250,0.14)', color: 'var(--c-blue)', padding: '2px 8px', borderRadius: 999 }}>參考用</span>
+          </div>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 12, lineHeight: 1.5 }}>
+            AI 依格局產生強電 / 弱電 / 冷氣 / 給排水建議，供你與水電師傅討論
+          </p>
+
+          {!mepPlan && (
+            <button className="btn btn-block" onClick={handleMep} disabled={mepLoading}
+              style={{ background: 'linear-gradient(135deg, #60a5fa, #5cba9d)', color: '#fff', fontWeight: 700, marginBottom: 12 }}>
+              {mepLoading
+                ? <><span className="animate-spin" style={{ display: 'inline-block' }}>⏳</span> 產生中...</>
+                : <><Zap size={15} /> 產生水電規劃建議</>}
+            </button>
+          )}
+          {mepError && (
+            <div style={{ marginBottom: 10, fontSize: 13, color: 'var(--c-red)', padding: '8px 12px', background: 'rgba(224,112,112,0.06)', borderRadius: 'var(--r-sm)' }}>⚠️ {mepError}</div>
+          )}
+
+          {mepPlan && (
+            <>
+              <div style={{ fontSize: 12, lineHeight: 1.6, marginBottom: 12, padding: '9px 12px', borderRadius: 'var(--r-sm)', background: 'rgba(224,112,112,0.06)', border: '1px solid rgba(224,112,112,0.2)', color: 'var(--text-2)' }}>
+                ⚠️ 以下為 AI 參考建議、<b style={{ color: 'var(--c-red)' }}>非施工圖</b>。實際迴路、管徑、冷氣噸數與安全，須由持照水電技師現場勘查確認。
+              </div>
+              {MEP_CATS.map(cat => (mepPlan[cat.key]?.length > 0) && (
+                <div key={cat.key} className="card" style={{ marginBottom: 10, borderLeft: `3px solid ${cat.color}` }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>{cat.icon} {cat.label}</div>
+                  {mepPlan[cat.key].map((t, i) => (
+                    <div key={i} style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6, marginTop: 4, display: 'flex', gap: 6 }}>
+                      <span style={{ color: cat.color }}>•</span><span>{t}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+              {mepPlan.perRoom?.length > 0 && (
+                <div className="card" style={{ marginBottom: 10 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>📍 各空間重點</div>
+                  {mepPlan.perRoom.map((r, i) => (
+                    <div key={i} style={{ marginTop: i ? 10 : 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--c-gold)' }}>{r.room}</div>
+                      {(r.items || []).map((t, j) => (
+                        <div key={j} style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.6, marginTop: 2, display: 'flex', gap: 6 }}>
+                          <span style={{ color: 'var(--text-3)' }}>•</span><span>{t}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button className="btn btn-ghost btn-sm btn-block" onClick={handleMep} disabled={mepLoading} style={{ marginBottom: 8 }}>
+                <RefreshCw size={13} /> 重新產生建議
+              </button>
             </>
           )}
         </>

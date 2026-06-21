@@ -231,6 +231,15 @@ export async function* streamChat(messages, settings, imageBase64 = null) {
   if (content) yield content
 }
 
+// 純文字問答（彙整 streamChat 串流為完整字串，自動走 GAISF / Gemini）
+export async function askText(prompt, settings) {
+  const out = []
+  for await (const chunk of streamChat([{ role: 'user', content: prompt }], settings)) {
+    out.push(chunk)
+  }
+  return out.join('')
+}
+
 async function geminiChat(messages, settings, imageBase64 = null) {
   const key = settings.geminiApiKey
   const model = settings.geminiModel || 'gemini-2.5-flash'
